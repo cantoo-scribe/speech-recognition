@@ -357,7 +357,6 @@ public class SpeechRecognition extends Plugin implements Constants {
         public void onEndOfSegmentedSession() {
             JSObject ret = new JSObject();
             notifyListeners("endOfSegmentedSession", ret);
-
         }
 
         @Override
