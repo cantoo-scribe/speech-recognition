@@ -1,6 +1,6 @@
 {
   "name": "@cantoo/speech-recognition",
-  "version": "7.0.2",
+  "version": "7.0.3",
   "description": "A native plugin for speech recognition",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -11,7 +11,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "CapacitorCommunitySpeechRecognition.podspec"
+    "CantooSpeechRecognition.podspec"
   ],
   "author": "Priyank Patel <priyank.patel@stackspace.ca>",
   "contributors": [
