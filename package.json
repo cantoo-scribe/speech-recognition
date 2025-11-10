@@ -1,5 +1,5 @@
 {
-  "name": "@capacitor-community/speech-recognition",
+  "name": "@cantoo/speech-recognition",
   "version": "7.0.1",
   "description": "A native plugin for speech recognition",
   "main": "dist/plugin.cjs.js",
@@ -15,15 +15,16 @@
   ],
   "author": "Priyank Patel <priyank.patel@stackspace.ca>",
   "contributors": [
-    "Matteo Padovano <mrbatista@users.noreply.github.com>"
+    "Matteo Padovano <mrbatista@users.noreply.github.com>",
+    "Cantoo <dev@cantoo.fr>"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/capacitor-community/speech-recognition.git"
+    "url": "git+https://github.com/cantoo-scribe/speech-recognition.git"
   },
   "bugs": {
-    "url": "https://github.com/capacitor-community/speech-recognition/issues"
+    "url": "https://github.com/cantoo-scribe/speech-recognition/issues"
   },
   "keywords": [
     "capacitor",
