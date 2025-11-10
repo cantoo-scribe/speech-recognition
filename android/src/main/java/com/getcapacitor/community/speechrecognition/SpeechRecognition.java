@@ -42,6 +42,8 @@ public class SpeechRecognition extends Plugin implements Constants {
 
     private JSONArray previousPartialResults = new JSONArray();
 
+    private int allowForSilence = 0;
+
     @Override
     public void load() {
         super.load();
@@ -82,6 +84,7 @@ public class SpeechRecognition extends Plugin implements Constants {
         boolean partialResults = call.getBoolean("partialResults", false);
         boolean popup = call.getBoolean("popup", false);
         int allowForSilence = call.getInt("allowForSilence", 0);
+        SpeechRecognition.this.allowForSilence = allowForSilence;
         beginListening(language, maxResults, prompt, partialResults, popup, call, allowForSilence);
     }
 
@@ -171,7 +174,7 @@ public class SpeechRecognition extends Plugin implements Constants {
         intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, partialResults);
         intent.putExtra("android.speech.extra.DICTATION_MODE", partialResults);
 
-        if (allowForSilence > 0) {
+        if (allowForSilence > 0 && !showPopup) {
             intent.putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS);
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, allowForSilence);
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, allowForSilence);
@@ -189,7 +192,6 @@ public class SpeechRecognition extends Plugin implements Constants {
                 .post(() -> {
                     try {
                         SpeechRecognition.this.lock.lock();
-
                         if (speechRecognizer != null) {
                             speechRecognizer.cancel();
                             speechRecognizer.destroy();
@@ -221,8 +223,12 @@ public class SpeechRecognition extends Plugin implements Constants {
             .post(() -> {
                 try {
                     SpeechRecognition.this.lock.lock();
-                    if (SpeechRecognition.this.listening) {
-                        speechRecognizer.stopListening();
+                    if (SpeechRecognition.this.listening) {  
+                        // Cancel and destroy to immediately stop without waiting for timeouts
+                        if (speechRecognizer != null) {
+                            speechRecognizer.cancel();
+                            speechRecognizer.destroy();
+                        }
                         SpeechRecognition.this.listening(false);
                     }
                 } catch (Exception ex) {
@@ -275,8 +281,9 @@ public class SpeechRecognition extends Plugin implements Constants {
                 .post(() -> {
                     try {
                         SpeechRecognition.this.lock.lock();
-                        SpeechRecognition.this.listening(false);
-
+                        if (SpeechRecognition.this.allowForSilence == 0) {
+                            SpeechRecognition.this.listening(false);
+                        }
                         JSObject ret = new JSObject();
                         ret.put("status", "stopped");
                         SpeechRecognition.this.notifyListeners(LISTENING_EVENT, ret);
@@ -388,6 +395,9 @@ public class SpeechRecognition extends Plugin implements Constants {
                 break;
             case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
                 message = "No speech input";
+                break;
+            case SpeechRecognizer.ERROR_SERVER_DISCONNECTED:
+                message = "Server disconnected";
                 break;
             default:
                 message = "Didn't understand, please try again.";
