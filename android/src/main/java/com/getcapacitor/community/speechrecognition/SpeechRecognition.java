@@ -39,6 +39,7 @@ public class SpeechRecognition extends Plugin implements Constants {
 
     private final ReentrantLock lock = new ReentrantLock();
     private boolean listening = false;
+    private PluginCall pendingStopCall = null;
 
     private JSONArray previousPartialResults = new JSONArray();
 
@@ -91,7 +92,7 @@ public class SpeechRecognition extends Plugin implements Constants {
     @PluginMethod
     public void stop(final PluginCall call) {
         try {
-            stopListening();
+            stopListening(call);
         } catch (Exception ex) {
             call.reject(ex.getLocalizedMessage());
         }
@@ -217,22 +218,26 @@ public class SpeechRecognition extends Plugin implements Constants {
         }
     }
 
-    private void stopListening() {
+    private void stopListening(PluginCall call) {
         bridge
             .getWebView()
             .post(() -> {
                 try {
                     SpeechRecognition.this.lock.lock();
-                    if (SpeechRecognition.this.listening) {  
-                        // Cancel and destroy to immediately stop without waiting for timeouts
-                        if (speechRecognizer != null) {
-                            speechRecognizer.cancel();
-                            speechRecognizer.destroy();
-                        }
+                    if (SpeechRecognition.this.listening) {
+                        // Store the stop call to resolve it when final results arrive
+                        SpeechRecognition.this.pendingStopCall = call;
+                        speechRecognizer.stopListening();
                         SpeechRecognition.this.listening(false);
+                    } else if (call != null) {
+                        // Already stopped, resolve immediately
+                        call.resolve();
                     }
                 } catch (Exception ex) {
-                    throw ex;
+                    if (call != null) {
+                        call.reject(ex.getLocalizedMessage());
+                    }
+                    SpeechRecognition.this.pendingStopCall = null;
                 } finally {
                     SpeechRecognition.this.lock.unlock();
                 }
@@ -287,6 +292,9 @@ public class SpeechRecognition extends Plugin implements Constants {
                         JSObject ret = new JSObject();
                         ret.put("status", "stopped");
                         SpeechRecognition.this.notifyListeners(LISTENING_EVENT, ret);
+                        
+                        // Note: Don't resolve pendingStopCall here - wait for onResults()
+                        // which is called after onEndOfSpeech with the final transcription
                     } finally {
                         SpeechRecognition.this.lock.unlock();
                     }
@@ -295,11 +303,25 @@ public class SpeechRecognition extends Plugin implements Constants {
 
         @Override
         public void onError(int error) {
-            SpeechRecognition.this.stopListening();
             String errorMssg = getErrorText(error);
 
-            if (this.call != null) {
-                call.reject(errorMssg);
+            try {
+                SpeechRecognition.this.lock.lock();
+                
+                // Reject the pending stop call if it exists
+                if (SpeechRecognition.this.pendingStopCall != null) {
+                    SpeechRecognition.this.pendingStopCall.reject(errorMssg);
+                    SpeechRecognition.this.pendingStopCall = null;
+                }
+                
+                // Reject the start call if it exists
+                if (this.call != null) {
+                    call.reject(errorMssg);
+                }
+                
+                SpeechRecognition.this.listening(false);
+            } finally {
+                SpeechRecognition.this.lock.unlock();
             }
         }
 
@@ -308,9 +330,22 @@ public class SpeechRecognition extends Plugin implements Constants {
             ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
 
             try {
+                SpeechRecognition.this.lock.lock();
                 JSArray jsArray = new JSArray(matches);
 
-                if (this.call != null) {
+                // If there's a pending stop call, send final results via event and resolve the stop call
+                if (SpeechRecognition.this.pendingStopCall != null) {
+                    if (this.partialResults) {
+                        // Send final results as event for partial mode
+                        JSObject ret = new JSObject();
+                        ret.put("matches", jsArray);
+                        notifyListeners("partialResults", ret);
+                    }
+                    // Resolve the stop call
+                    SpeechRecognition.this.pendingStopCall.resolve();
+                    SpeechRecognition.this.pendingStopCall = null;
+                } else if (this.call != null) {
+                    // Normal flow: no stop call pending
                     if (!this.partialResults) {
                         this.call.resolve(new JSObject().put("status", "success").put("matches", jsArray));
                     } else {
@@ -320,7 +355,14 @@ public class SpeechRecognition extends Plugin implements Constants {
                     }
                 }
             } catch (Exception ex) {
-                this.call.resolve(new JSObject().put("status", "error").put("message", ex.getMessage()));
+                if (SpeechRecognition.this.pendingStopCall != null) {
+                    SpeechRecognition.this.pendingStopCall.reject(ex.getMessage());
+                    SpeechRecognition.this.pendingStopCall = null;
+                } else if (this.call != null) {
+                    this.call.resolve(new JSObject().put("status", "error").put("message", ex.getMessage()));
+                }
+            } finally {
+                SpeechRecognition.this.lock.unlock();
             }
         }
 

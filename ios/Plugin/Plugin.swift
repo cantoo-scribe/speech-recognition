@@ -18,6 +18,7 @@ public class SpeechRecognition: CAPPlugin {
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var pendingStopCall: CAPPluginCall?
 
     @objc func available(_ call: CAPPluginCall) {
         guard let recognizer = SFSpeechRecognizer() else {
@@ -107,6 +108,13 @@ public class SpeechRecognition: CAPPlugin {
                         self.audioEngine!.stop()
                         self.audioEngine?.inputNode.removeTap(onBus: 0)
                         self.notifyListeners("listeningState", data: ["status": "stopped"])
+                        
+                        // Resolve pending stop call if it exists
+                        if let stopCall = self.pendingStopCall {
+                            stopCall.resolve()
+                            self.pendingStopCall = nil
+                        }
+                        
                         self.recognitionTask = nil
                         self.recognitionRequest = nil
                     }
@@ -118,6 +126,13 @@ public class SpeechRecognition: CAPPlugin {
                     self.recognitionRequest = nil
                     self.recognitionTask = nil
                     self.notifyListeners("listeningState", data: ["status": "stopped"])
+                    
+                    // Reject pending stop call if it exists
+                    if let stopCall = self.pendingStopCall {
+                        stopCall.reject(error!.localizedDescription)
+                        self.pendingStopCall = nil
+                    }
+                    
                     call.reject(error!.localizedDescription)
                 }
             })
@@ -142,11 +157,19 @@ public class SpeechRecognition: CAPPlugin {
     @objc func stop(_ call: CAPPluginCall) {
         DispatchQueue.global(qos: DispatchQoS.QoSClass.default).async {
             if let engine = self.audioEngine, engine.isRunning {
-                engine.stop()
+                // Store the stop call to be resolved when final results arrive
+                self.pendingStopCall = call
+                
+                // Signal end of audio - this will trigger the final callback with isFinal=true
                 self.recognitionRequest?.endAudio()
-                self.notifyListeners("listeningState", data: ["status": "stopped"])
+                engine.stop()
+                
+                // Don't resolve the call here - it will be resolved in the recognition callback
+                // when isFinal = true
+            } else {
+                // Already stopped, resolve immediately
+                call.resolve()
             }
-            call.resolve()
         }
     }
 
