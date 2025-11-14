@@ -419,6 +419,13 @@ public class SpeechRecognition extends Plugin implements Constants {
                 
                 JSObject ret = new JSObject();
                 notifyListeners("endOfSegmentedSession", ret);
+            } catch (Exception ex) {
+                if (SpeechRecognition.this.pendingStopCall != null) {
+                    SpeechRecognition.this.pendingStopCall.reject(ex.getMessage());
+                    SpeechRecognition.this.pendingStopCall = null;
+                } else if (this.call != null) {
+                    this.call.resolve(new JSObject().put("status", "error").put("message", ex.getMessage()));
+                }
             } finally {
                 SpeechRecognition.this.lock.unlock();
             }
