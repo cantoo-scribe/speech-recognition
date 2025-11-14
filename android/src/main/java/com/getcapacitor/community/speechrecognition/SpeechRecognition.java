@@ -286,6 +286,7 @@ public class SpeechRecognition extends Plugin implements Constants {
                 .post(() -> {
                     try {
                         SpeechRecognition.this.lock.lock();
+                        // This method is called at the end of each segment
                         if (SpeechRecognition.this.allowForSilence == 0) {
                             SpeechRecognition.this.listening(false);
                         }
@@ -400,8 +401,27 @@ public class SpeechRecognition extends Plugin implements Constants {
 
         @Override
         public void onEndOfSegmentedSession() {
-            JSObject ret = new JSObject();
-            notifyListeners("endOfSegmentedSession", ret);
+            try {
+                SpeechRecognition.this.lock.lock();
+                
+                // After calling stopListening, wait for this event to resolve the stop call.
+                if (SpeechRecognition.this.pendingStopCall != null) {
+                    // Resolve the pending stop call
+                    SpeechRecognition.this.pendingStopCall.resolve();
+                    SpeechRecognition.this.pendingStopCall = null;
+                    SpeechRecognition.this.listening(false);
+                    // Destroy the recognizer immediately, otherwise it will be destroyed by the system only after the allowForSilence timeout
+                    if (speechRecognizer != null) {
+                        speechRecognizer.destroy();
+                        speechRecognizer = null;
+                    }
+                }
+                
+                JSObject ret = new JSObject();
+                notifyListeners("endOfSegmentedSession", ret);
+            } finally {
+                SpeechRecognition.this.lock.unlock();
+            }
         }
 
         @Override
